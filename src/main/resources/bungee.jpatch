@@ -1,0 +1,134 @@
+
+.class ~HandshakeListener
+
+    .field ~networkManager L~NetworkManager; private
+
+    .method ~handle (L~PacketHandshake;)V
+        .any
+        .invoke-virtual ~PacketHandshake ~getProtocol ()L*;
+        .invoke-virtual * ordinal ()I
+        .any
+        .get-field ~HandshakeListener ~networkManager L~NetworkManager;
+        .get-static * * L*;
+        .invoke-virtual ~NetworkManager ~setProtocol (L*;)V
+        // Inject our helper
+        +load-object 0
+        +get-field ~HandshakeListener ~networkManager L~NetworkManager;
+        +store-object 2
+        +load-object 2
+        +load-object 1
+        +invoke-static uk/co/thinkofdeath/vanillacord/util/BungeeHelper parseHandshake (Luk/co/thinkofdeath/vanillacord/util/INetworkManager;Luk/co/thinkofdeath/vanillacord/util/IHandshakePacket;)V
+        .any
+        .invoke-virtual ~PacketHandshake ~getProtocolVersion ()I
+        .push-int *
+        .any
+    .end-method
+.end-class
+
+.class ~PacketHandshake
+
+    +interface uk/co/thinkofdeath/vanillacord/util/IHandshakePacket
+
+    .field ~hostname Ljava/lang/String; private
+
+    +method getHostname ()Ljava/lang/String;
+        +load-object 0
+        +get-field ~PacketHandshake ~hostname Ljava/lang/String;
+        +return
+    +end-method
+
+    .method ~read (L*;)V
+        .any
+        .load-object 0
+        .load-object 1
+        -push-int 255
+        +push-int 32767
+        .invoke-virtual * * (I)Ljava/lang/String;
+        .put-field ~PacketHandshake ~hostname Ljava/lang/String;
+        .any
+    .end-method
+.end-class
+
+.class ~NetworkManager
+
+    +interface uk/co/thinkofdeath/vanillacord/util/INetworkManager
+
+    .field ~address Ljava/net/SocketAddress; private
+    .field ~channel Lio/netty/channel/Channel; private
+
+    +method getAddress ()Ljava/net/SocketAddress;
+        +load-object 0
+        +get-field ~NetworkManager ~address Ljava/net/SocketAddress;
+        +return
+    +end-method
+
+    +method setAddress (Ljava/net/SocketAddress;)V
+        +load-object 0
+        +load-object 1
+        +put-field ~NetworkManager ~address Ljava/net/SocketAddress;
+        +return
+    +end-method
+
+    +method getChannel ()Lio/netty/channel/Channel;
+        +load-object 0
+        +get-field ~NetworkManager ~channel Lio/netty/channel/Channel;
+        +return
+    +end-method
+
+    // Added purely to improve detection
+    .method <clinit> ()V static
+        .invoke-static org/apache/logging/log4j/LogManager getLogger ()Lorg/apache/logging/log4j/Logger;
+        .put-static * * Lorg/apache/logging/log4j/Logger;
+        .push-string "NETWORK"
+        .invoke-static org/apache/logging/log4j/MarkerManager getMarker (Ljava/lang/String;)Lorg/apache/logging/log4j/Marker;
+        .put-static * * Lorg/apache/logging/log4j/Marker;
+        .push-string "NETWORK_PACKETS"
+        .get-static * * Lorg/apache/logging/log4j/Marker;
+        .invoke-static org/apache/logging/log4j/MarkerManager getMarker (Ljava/lang/String;Lorg/apache/logging/log4j/Marker;)Lorg/apache/logging/log4j/Marker;
+        .put-static * * Lorg/apache/logging/log4j/Marker;
+        .push-string "protocol"
+        .any
+    .end-method
+.end-class
+
+.class ~LoginListener
+
+    .field ~networkManager L~NetworkManager;
+
+    .method ~getOfflineProfile (Lcom/mojang/authlib/GameProfile;)Lcom/mojang/authlib/GameProfile; protected
+        +load-object 0
+        +get-field ~LoginListener ~networkManager L~NetworkManager;
+        +store-object 2
+        +load-object 2
+        +load-object 1
+        +invoke-static uk/co/thinkofdeath/vanillacord/util/BungeeHelper injectProfile (Luk/co/thinkofdeath/vanillacord/util/INetworkManager;Lcom/mojang/authlib/GameProfile;)Lcom/mojang/authlib/GameProfile;
+        +return
+        .any
+        .dup
+        .invoke-special java/lang/StringBuilder <init> ()V
+        .push-string "OfflinePlayer:"
+        .any
+        .return
+    .end-method
+
+    .method ~handle (L~LoginStart;)V
+        .any
+        .push-string "Unexpected hello packet"
+        .any
+        .load-object 0
+        .get-field ~LoginListener * L*;
+        -invoke-virtual * * ()Z
+        +push-int 0
+        .if-zero *
+        .any
+    .end-method
+.end-class
+
+.class net/minecraft/server/MinecraftServer
+
+    .method getServerModName ()Ljava/lang/String;
+        -push-string "vanilla"
+        +push-string "VanillaCord"
+        .return
+    .end-method
+.end-class

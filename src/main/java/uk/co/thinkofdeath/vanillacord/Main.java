@@ -2,17 +2,16 @@ package uk.co.thinkofdeath.vanillacord;
 
 import com.google.common.io.ByteStreams;
 import com.google.common.io.Resources;
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassWriter;
+import uk.co.thinkofdeath.patchtools.Patcher;
+import uk.co.thinkofdeath.patchtools.wrappers.ClassPathWrapper;
+import uk.co.thinkofdeath.patchtools.wrappers.ClassSet;
 
 import java.io.*;
-import java.lang.reflect.Method;
 import java.net.URL;
-import java.net.URLClassLoader;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
 public class Main {
@@ -35,108 +34,65 @@ public class Main {
                 Resources.copy(new URL(url), fin);
             }
         }
-        addURL(in.toURI().toURL());
 
         File out = new File("out/" + version + "-bungee.jar");
         out.getParentFile().mkdirs();
         if (out.exists()) out.delete();
 
-        try (ZipInputStream zip = new ZipInputStream(new FileInputStream(in));
-             ZipOutputStream zop = new ZipOutputStream(new FileOutputStream(out));
-             InputStream helper = Main.class.getResourceAsStream("/uk/co/thinkofdeath/vanillacord/util/BungeeHelper.class")) {
 
-            HashMap<String, byte[]> classes = new HashMap<>();
+        System.out.println("Loading classes");
 
-            System.out.println("Loading");
+        ClassSet classSet = new ClassSet(new ClassPathWrapper(in));
+        HashMap<String, byte[]> resources = new HashMap<>();
 
-            ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                if (!entry.getName().endsWith(".class")) {
-                    zop.putNextEntry(entry);
-                    ByteStreams.copy(zip, zop);
-                    continue;
-                }
-                byte[] clazz = ByteStreams.toByteArray(zip);
-                classes.put(entry.getName(), clazz);
+        try (ZipFile zipFile = new ZipFile(in)) {
+            zipFile.stream()
+                .forEach(c -> {
+                    try (InputStream cin = zipFile.getInputStream(c)) {
+                        if (c.getName().endsWith(".class") && (!c.getName().contains("/") || c.getName().startsWith("net/minecraft"))) {
+                            classSet.add(cin, false);
+                        } else {
+                            resources.put(c.getName(), ByteStreams.toByteArray(cin));
+                        }
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                });
+        }
+        classSet.simplify();
+
+        long start = System.nanoTime();
+        Patcher patcher = new Patcher(classSet);
+        System.out.println(patcher.apply(Main.class.getResourceAsStream("/bungee.jpatch")));
+        System.out.println("Time: " + (System.nanoTime() - start));
+
+        String[] helpers = {
+            "uk/co/thinkofdeath/vanillacord/util/BungeeHelper",
+            "uk/co/thinkofdeath/vanillacord/util/INetworkManager",
+            "uk/co/thinkofdeath/vanillacord/util/IHandshakePacket",
+        };
+
+        try (ZipOutputStream zop = new ZipOutputStream(new FileOutputStream(out))) {
+            for (String cls : classSet.classes(true)) {
+                System.out.println("Saving " + cls);
+                ZipEntry zipEntry = new ZipEntry(cls + ".class");
+                zop.putNextEntry(zipEntry);
+                zop.write(classSet.getClass(cls));
             }
-
-            String handshakePacket = null;
-            String loginListener = null;
-            String networkManager = null;
-
-            for (Map.Entry<String, byte[]> e : new HashMap<>(classes).entrySet()) {
-                byte[] clazz = e.getValue();
-                ClassReader reader = new ClassReader(clazz);
-                TypeChecker typeChecker = new TypeChecker();
-                reader.accept(typeChecker, 0);
-
-                if (typeChecker.isHandshakeListener()) {
-                    System.out.println("Found the handshake listener in " + e.getKey());
-
-                    reader = new ClassReader(clazz);
-                    ClassWriter classWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
-                    HandshakeListener hsl = new HandshakeListener(classWriter, typeChecker);
-                    reader.accept(hsl, 0);
-                    clazz = classWriter.toByteArray();
-
-                    handshakePacket = hsl.getHandshake();
-                    networkManager = hsl.getNetworkManager();
-                } else if (typeChecker.isLoginListener()) {
-                    System.out.println("Found the login listener in " + e.getKey());
-                    loginListener = e.getKey();
-                }
-                classes.put(e.getKey(), clazz);
-            }
-            // Increase the hostname field size
-            {
-                byte[] clazz = classes.get(handshakePacket + ".class");
-                ClassReader reader = new ClassReader(clazz);
-                ClassWriter classWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
-                reader.accept(new HandshakePacket(classWriter), 0);
-                clazz = classWriter.toByteArray();
-                classes.put(handshakePacket + ".class", clazz);
-            }
-            // Inject the profile injector and force offline mode
-            {
-                byte[] clazz = classes.get(loginListener);
-                ClassReader reader = new ClassReader(clazz);
-                ClassWriter classWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
-                reader.accept(new LoginListener(classWriter, networkManager), 0);
-                clazz = classWriter.toByteArray();
-                classes.put(loginListener, clazz);
-            }
-            // Change the server brand
-            {
-                byte[] clazz = classes.get("net/minecraft/server/MinecraftServer.class");
-                ClassReader classReader = new ClassReader(clazz);
-                ClassWriter classWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
-                classReader.accept(new MCBrand(classWriter), 0);
-                clazz = classWriter.toByteArray();
-                classes.put("net/minecraft/server/MinecraftServer.class", clazz);
-            }
-
-            for (Map.Entry<String, byte[]> e : classes.entrySet()) {
-                zop.putNextEntry(new ZipEntry(e.getKey()));
+            for (Map.Entry<String, byte[]> e : resources.entrySet()) {
+                ZipEntry zipEntry = new ZipEntry(e.getKey());
+                zop.putNextEntry(zipEntry);
                 zop.write(e.getValue());
             }
 
-            System.out.println("Adding helper");
-            zop.putNextEntry(new ZipEntry("uk/co/thinkofdeath/vanillacord/util/BungeeHelper.class"));
-            ByteStreams.copy(helper, zop);
+            System.out.println("Adding helpers");
+            for (String helper : helpers) {
+                zop.putNextEntry(new ZipEntry(helper + ".class"));
+                try (InputStream he = Main.class.getResourceAsStream("/" + helper + ".class")) {
+                    ByteStreams.copy(he, zop);
+                }
+            }
         }
-    }
-
-
-    public static void addURL(URL u) throws IOException {
-        URLClassLoader sysloader = (URLClassLoader) ClassLoader.getSystemClassLoader();
-        Class<?> sysclass = URLClassLoader.class;
-        try {
-            Method method = sysclass.getDeclaredMethod("addURL", URL.class);
-            method.setAccessible(true);
-            method.invoke(sysloader, new Object[]{u});
-        } catch (Throwable t) {
-            t.printStackTrace();
-            throw new IOException("Error, could not add URL to system classloader");
-        }
+        System.out.println("Done");
     }
 }

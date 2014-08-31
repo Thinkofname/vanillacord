@@ -1,12 +1,15 @@
 apply plugin: 'java'
 
-sourceCompatibility = 1.7
+sourceCompatibility = 1.8
 version = '1.0'
 
 repositories {
     mavenCentral()
     maven {
         url "https://libraries.minecraft.net/"
+    }
+    maven {
+        url "http://repo.thinkofdeath.co.uk/content/groups/public/"
     }
 }
 
@@ -25,7 +28,13 @@ jar {
     }
 }
 
+configurations.all {
+    // check for updates every build
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
 dependencies {
+    compile group: 'uk.co.thinkofdeath.patchtools', name:'patchtools', version: '0.1-SNAPSHOT'
     compile group: 'com.google.code.gson', name: 'gson', version: '2.2.4'
     compile group: 'com.mojang', name: 'authlib', version: '1.5.16'
     compile group: 'io.netty', name: 'netty-all', version: '4.0.10.Final'
