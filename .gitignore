@@ -2,5 +2,9 @@ build/
 in/
 out/
 .idea
-
+.gradle
 *.iml
+.project
+.settings
+.classpath
+

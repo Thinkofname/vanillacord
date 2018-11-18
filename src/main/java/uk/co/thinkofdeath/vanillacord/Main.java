@@ -21,26 +21,15 @@ public class Main {
 
     public static void main(String[] args) throws IOException {
         if (args.length != 1) {
-            System.out.println("Args: <version>");
+            System.out.println("Args: <server file>");
             return;
         }
 
-        String version = args[0];
-
-        String url = String.format("http://s3.amazonaws.com/Minecraft.Download/versions/%1$s/minecraft_server.%1$s.jar", version);
-
-        File in = new File("in/" + version + ".jar");
-        in.getParentFile().mkdirs();
-        if (!in.exists()) {
-            System.out.println("Downloading");
-            try (FileOutputStream fin = new FileOutputStream(in)) {
-                Resources.copy(new URL(url), fin);
-            }
-        }
+        String filename = args[0];
+        File in = new File(filename);
         addURL(in.toURI().toURL());
 
-        File out = new File("out/" + version + "-bungee.jar");
-        out.getParentFile().mkdirs();
+        File out = new File(in.getName().replace(".jar","")+"-bungee.jar");
         if (out.exists()) out.delete();
 
         try (ZipInputStream zip = new ZipInputStream(new FileInputStream(in));
